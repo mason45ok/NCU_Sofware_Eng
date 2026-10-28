@@ -1,0 +1,52 @@
+# 聚點 空間租借系統：web、api、scheduler、db、mailpit 五個服務
+x-api: &api
+  build: ./backend
+  env_file: .env
+  depends_on:
+    db:
+      condition: service_healthy
+  volumes:
+    - uploads:/data/uploads
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: judian
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d judian"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    <<: *api
+
+  scheduler:
+    <<: *api
+    command: ["flask", "run-scheduler"]
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "8025:8025"
+
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    volumes:
+      - uploads:/data/uploads:ro
+
+volumes:
+  pgdata:
+  uploads:
