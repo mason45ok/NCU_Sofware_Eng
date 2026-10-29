@@ -10,6 +10,8 @@
 |---|---|---|---|
 | 後端框架 | Python 3.12、Flask 3 | 課程指定；輕量，以 Blueprint 區分使用者與管理員路由 | 需自行組合套件 |
 | ORM／migration | SQLAlchemy 2、Flask-Migrate（Alembic） | ORM 作為 MVC 的 Model；migration 讓 4 人同步資料庫結構 | 排除約束需在 migration 中手寫 |
+| 資料庫整合 | Flask-SQLAlchemy 3、psycopg 3（`psycopg[binary]`） | Flask-Migrate 需要 Flask-SQLAlchemy 提供 `db.Model` 與 session；psycopg 3 為 SQLAlchemy 2 建議的 PostgreSQL 驅動 | 多一層封裝 |
+| 時區資料 | tzdata | Windows 沒有系統時區資料庫，`zoneinfo` 需要它才能使用 Asia/Taipei | |
 | 輸入驗證 | Pydantic 2 | 以型別定義請求與回應格式，錯誤訊息一致 | 與 Flask 需一個小型整合函式 |
 | 登入狀態 | Flask-Login＋Flask 簽章 cookie session | 伺服器簽章、HttpOnly cookie，比 localStorage 的 JWT 更能防 XSS 竊取 | 前後端須同網域（nginx 代理解決） |
 | CSRF | Flask-WTF `CSRFProtect` | 標準防護；前端從 `/api/v1/auth/csrf` 取得 token 放在 `X-CSRFToken` 標頭 | 每個修改請求都要帶標頭 |
@@ -23,7 +25,7 @@
 | 路由 | React Router 6 | 標準路由，支援受保護路由 | |
 | 伺服器狀態 | TanStack Query 5 | 處理 API 快取、載入、錯誤、重新整理，減少自寫狀態管理 | |
 | 表單 | React Hook Form＋Zod | 前端驗證規則與 TypeScript 型別共用 | |
-| UI 元件 | Mantine 7（含 `@mantine/dates`） | 元件完整、內建無障礙與日期元件、主題易客製 | 套件體積較大 |
+| UI 元件 | Mantine 7（`@mantine/core`、`hooks`、`notifications`） | 元件完整、內建無障礙、主題易客製。日期選擇使用瀏覽器原生 `<input type="date">`（手機體驗佳、可鍵盤操作），因此未引入 `@mantine/dates` | 套件體積較大 |
 | 日期 | dayjs（含 timezone 外掛） | 一律以 Asia/Taipei 顯示 | |
 | 測試 | pytest、pytest-cov；Vitest、Testing Library；Playwright | 後端單元與整合測試、前端元件測試、端對端測試 | |
 | 壓力測試 | Locust | Python 撰寫情境，與後端同語言 | |
