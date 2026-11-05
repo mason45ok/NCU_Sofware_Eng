@@ -6,7 +6,7 @@
 
 「聚點」空間租借系統：會員搜尋並預約活動空間、模擬付款、取得房間密碼自助入場；管理員維護場館、空間、訂單與會員。軟體工程課程期末專案，4 人小組。
 
-**開發模式**：由主開發一人以 BMAD＋Claude Code 生成全部程式，其他三人負責測試、審查與文件。每個 Story 一個分支與 PR，經驗證者核准才合併；驗證者回報的問題以 GitHub Issue 追蹤。
+**開發模式**：四人分工為兩位開發（後端、前端）、一位 PM、一位測試；前期規劃與文件撰寫由全組共同討論。以兩種 LLM 協作：組員先討論定案軟體主軸、功能、Tables 與 User Story，交給 ChatGPT（GPT-6.1 Sol）產生 meta prompt，再交給 Claude 產生程式碼；接著由 GPT-6.1 Sol 設計 pytest 測試並給建議（必要修正、建議改善），組員人工審核後再請 Claude 調整程式碼。每個 Story 一個分支與 PR，經非作者核准才合併；問題以 GitHub Issue 追蹤。
 
 - 期中檢核 **2026-11-18**：所有 P0 功能可從頭到尾操作，並完成文件 (a)–(d) 與部分 (g)。
 - 期末 demo **2026-12-16**。
@@ -43,8 +43,8 @@
 5. 金額、可預約時段、退款比例一律由後端計算，前端只顯示。
 6. 防止重複預約依賴資料庫排除約束 `ex_bookings_no_overlap`，不可改成「先查再新增」。
 7. 訂單狀態只能透過 `Booking.transition()` 改變（它檢查轉換是否合法並寫入 `booking_status_logs`）；改期與部分退款不改狀態，用 `Booking.record()` 寫紀錄。不得在其他地方直接設定 `booking.status`。
-8. 訂單相關的寫入（訂單、狀態紀錄、退款）只能經過 `BookingService`；`PaymentService` 只負責模擬金流與寫 payments，不呼叫其他 Service。
-9. 金額、價差與退款比例只能由 `policies/pricing.py`、`policies/refund.py` 的純函式計算；試算 API 與正式流程呼叫同一個函式。
+8. 訂單相關的寫入（訂單、狀態紀錄、退款）只能經過 `BookingService`；`PaymentService` 只負責呼叫金流 Adapter 與寫 payments，不呼叫其他 Service。
+9. 金額與價差只能由 `policies/pricing.py` 的純函式計算；退款比例只能由 `policies/refund.py` 的 `RefundPolicy` 策略決定，退款金額由 `refund_amount()` 計算；試算 API 與正式流程使用同一個策略與函式。
 10. 公開方法不用布林旗標切換行為（例如不要 `cancel(by_admin=True)`），改成兩個方法（`cancel_by_member`、`cancel_by_admin`）共用私有核心。
 11. Service 拋出的例外只帶錯誤碼；HTTP 狀態碼對照放在 `errors.py`。
 12. 類別與方法名稱依設計圖 D3；需要新增或改名時先提出。
