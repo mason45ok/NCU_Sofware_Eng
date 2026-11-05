@@ -15,7 +15,7 @@
 | 輸入驗證 | Pydantic 2 | 以型別定義請求與回應格式，錯誤訊息一致 | 與 Flask 需一個小型整合函式 |
 | 登入狀態 | Flask-Login＋Flask 簽章 cookie session | 伺服器簽章、HttpOnly cookie，比 localStorage 的 JWT 更能防 XSS 竊取 | 前後端須同網域（nginx 代理解決） |
 | CSRF | Flask-WTF `CSRFProtect` | 標準防護；前端從 `/api/v1/auth/csrf` 取得 token 放在 `X-CSRFToken` 標頭 | 每個修改請求都要帶標頭 |
-| Google OAuth | Authlib | 成熟的 OAuth／OIDC 用戶端，驗證 id_token | 需 Google Cloud 憑證（開發期以 mock 代替） |
+| Google OAuth | Authlib | 成熟的 OAuth／OIDC 用戶端，驗證 id_token | 需 Google Cloud 憑證（開發期以 mock 代替）；Authlib 只出現在 `adapters/identity/`，由 `IdentityProvider` Adapter 隔離 |
 | 限流 | Flask-Limiter | 登入、註冊、忘記密碼防暴力嘗試 | |
 | 排程 | APScheduler（獨立 `scheduler` 容器） | 輕量；獨立容器避免多個 API worker 重複執行 | 單一排程程序，課程規模足夠 |
 | 寄信 | Python `smtplib`；開發用 Mailpit | 不綁特定服務；Mailpit 提供網頁介面檢視測試信 | |
@@ -77,18 +77,36 @@ flowchart LR
 | Controller | `backend/app/blueprints/`（Flask Blueprint） | 解析請求、Pydantic 驗證、呼叫 service、轉換回應；不寫商業規則 |
 | View | `frontend/`（React） | 畫面與互動、前端輸入驗證；不做權限與金額判斷 |
 | Service | `backend/app/services/` | 協調流程、交易邊界、權限與資料所有權檢查；回傳 DTO（`schemas/` 的 Pydantic 模型），ORM 物件不離開 Service 層 |
-| Policy | `backend/app/policies/` | 不碰資料庫的純函式業務規則：`PricingPolicy`（金額、改期價差，BR-07、14）、`RefundPolicy`（退款比例與金額，BR-12、13）。試算 API 與正式流程呼叫同一個函式 |
+| Policy | `backend/app/policies/` | 不碰資料庫的業務規則（純函式與策略）：`PricingPolicy`（金額、改期價差，BR-07、14）、`RefundPolicy`（退款比例 Strategy：`MemberRefundPolicy`、`AdminRefundPolicy`、`NoRefundPolicy`；`refund_amount()` 為純函式，BR-12、13）。試算 API 與正式流程呼叫同一個策略與函式。新增退款規則 = 新增一個 `RefundPolicy` 子類別。`booking_rules`：待付款上限、改期 24 小時與 1 次、評論 30 天等門檻，以及 `can_cancel`、`can_reschedule`（`reschedule_denial`）、`can_review` 判斷；畫面旗標與執行時檢查共用，門檻只在此定義一次 |
+| Repository | `backend/app/repositories/` | `BookingRepository`（窄版）：訂單的查詢、鎖定（FOR UPDATE、SKIP LOCKED）、分頁、序號與逾時／結束批次查詢；`commit`／`rollback` 只轉交同一個 session，交易邊界仍由 `BookingService` 決定。其他 Service（目錄、後台管理等純 CRUD、沒有變動維度）維持直接查詢，不另設 Repository |
+| Adapter | `backend/app/adapters/payment/` | 金流 Adapter：`PaymentGateway` 介面（`pay(amount, ref, card_no) → GatewayResult`）、`SimulatedCardGateway`、`SimulatedLinePayGateway`；`PaymentGatewayFactory` 以註冊表依付款方式取得 Adapter。新增付款方式 = 新增一個 Adapter 類別 + 一行 `register`，**另外**須在 `PaymentMethod` 列舉加值，並以 migration 修改資料庫 `payments.method` 的 CHECK 約束 `ck_payments_method`（目前只允許 `CREDIT_CARD`、`LINE_PAY`）與同步 `SCHEMA.md`（規則 13，須全組確認）。`backend/app/adapters/identity/`：`IdentityProvider` 介面（`begin`、`complete`）、`GoogleAuthlibProvider`（Authlib）、`MockGoogleProvider`（開發與測試）；`build_identity_provider()` 依 `GOOGLE_MOCK` 選擇，`create_app()` 可注入替換 |
 
 規則：
 
-1. Controller 不寫商業規則；跨表的寫入只能在 Service 中、以單一交易完成。課程規模不另設 repository 層，查詢寫在 Service 內，重複的查詢抽成 model 上的 classmethod。
+1. Controller 不寫商業規則；跨表的寫入只能在 Service 中、以單一交易完成。訂單相關的資料存取（查詢、鎖定、分頁）集中在 `BookingRepository`，`BookingService` 不直接使用 `db.session` 或 `select`（有架構測試檢查）；其他以 CRUD 為主的 Service 不另設 Repository，查詢寫在 Service 內，重複的查詢抽成 model 上的 classmethod。
 2. **訂單相關的寫入（bookings、booking_status_logs、退款）只能經過 `BookingService`**；其他 Service 與排程需要改訂單時，呼叫 `BookingService` 的公開方法。
 3. **訂單狀態只能透過 `Booking.transition()` 改變**，它依 D10 狀態圖檢查轉換是否合法並產生狀態紀錄；改期與部分退款不改狀態，以 `Booking.record()` 寫紀錄。
-4. `PaymentService` 只負責模擬金流與寫入 payments，不依賴其他 Service。
+4. `PaymentService` 只負責呼叫金流 Adapter（經 `PaymentGatewayFactory`）與寫入 payments，不依賴其他 Service。
 5. 公開方法不使用布林旗標切換行為；會員與管理員規則不同時，提供兩個語意明確的方法（例如 `cancel_by_member`、`cancel_by_admin`），共用私有核心。
 6. Service 不直接讀系統時間，一律透過注入的 `Clock`（`utils/clock.py`），測試時替換成固定時間。
 
 各模組與 Service 的完整相依見 `docs/設計圖_邏輯設計與細部設計.md` 的 L3 與 D3。
+
+### 3.1 第四層設計（Strategy＋Factory＋Adapter）與變更影響
+
+依課程講義的五個固定變更情境檢驗（✓ 只要新增、△ 要小改、✗ 牽一髮動全身）。「重構前」為 commit f844c45 的實測，「重構後」依目前程式與 `tests/unit` 中以假類別驗證的結果。
+
+| 情境 | 重構前 | 重構後 | 要新增或修改的檔案 |
+|---|---|---|---|
+| C1 加一種退款規則 | ✗ 改 `refund.py`、`booking.py` | ✓ | 新增一個 `RefundPolicy` 子類別；組裝處（`BookingService` 預設值）指定使用 |
+| C2 加一種付款方式 | ✗ 改 5 個以上檔案 | △ | 新增一個 `PaymentGateway` 類別 + 一行 `register`；另需 `PaymentMethod` 列舉、資料庫 CHECK 約束的 migration、`SCHEMA.md`、前端兩個頁面的選項 |
+| C3 換資料庫 | ✗ 訂單相關 SQL 散在 `BookingService` | △ | 訂單相關查詢集中於 `BookingRepository`；其他 Service 仍直接查詢，且專案規定 PostgreSQL 與 `btree_gist` |
+| C4 加一個入口（例如另一種登入來源） | ✓（Google 登入為 △） | ✓ | 新增一個 `IdentityProvider` 類別並由 factory 選擇；Controller 不必複製流程 |
+| C5 不連外部服務就能測試 | △ | △ | 規則、策略、Adapter 轉換邏輯可不連資料庫測試；流程測試仍需 PostgreSQL（刻意：併發測試必須用實際資料庫） |
+
+依賴規則由 `backend/tests/unit/test_architecture.py` 檢查：`policies/` 不得依賴 `sqlalchemy`、`flask`、`authlib`、`smtplib`、`requests`；`services/`、`blueprints/` 不得依賴 `authlib`、`smtplib`、`requests`；`BookingService` 不得直接使用 `db.session` 或 `select`；訂單門檻只能在 `policies/booking_rules.py` 定義。
+
+刻意**不**使用模式的地方：計價（目前只有單一計價規則，且資料表只存單一 `hourly_price_snapshot`，真的出現第二種規則時須先走 schema 變更；訂單金額已集中於 `BookingService._amount_for()`）、訂單狀態機（`Booking.transition()` 的狀態表比 State pattern 清楚）、寄信（`Mailer.send` 已可注入替換）、目錄與後台管理等純 CRUD。
 
 ## 4. 目錄結構
 
@@ -109,7 +127,10 @@ flowchart LR
 │   │   ├── services/            # auth、password、google_auth、catalog、availability、
 │   │   │                        # booking、payment、access_code、review、favorite、
 │   │   │                        # notification、admin_catalog、admin_booking、admin_user
-│   │   ├── policies/            # pricing、refund（純函式）
+│   │   ├── policies/            # pricing（純函式）、refund（RefundPolicy 策略＋純函式）、booking_rules（訂單門檻與 can_* 判斷）
+│   │   ├── repositories/        # BookingRepository（訂單資料存取）
+│   │   ├── adapters/payment/    # 金流 Adapter 與 PaymentGatewayFactory
+│   │   ├── adapters/identity/   # Google 身分提供者 Adapter（Authlib／mock）
 │   │   ├── blueprints/          # auth、catalog、me、bookings、admin、dev
 │   │   ├── jobs/                # 排程工作
 │   │   ├── security/            # 密碼雜湊、權杖、權限裝飾器
@@ -305,7 +326,7 @@ flowchart LR
 1. `SELECT ... FOR UPDATE` 鎖定訂單（先鎖再查冪等鍵，避免同一鍵的併發請求同時通過檢查）。
 2. 查詢 `Idempotency-Key`：已存在且屬於同一訂單 → 直接回傳該筆結果；屬於其他訂單 → 409 `IDEMPOTENCY_KEY_REUSED`。
 3. 檢查狀態為 PENDING_PAYMENT、帳號狀態（BR-05）、空間與場館仍可預約（BR-18）。已逾期則 `transition(EXPIRED)` 並**提交**，再回傳 409 `BOOKING_EXPIRED`。
-4. 呼叫 `PaymentService.charge()`：模擬金流（測試卡號 `4000 0000 0000 0002` 失敗，其餘成功）並寫入 payments，回傳成功或失敗；PaymentService 不碰訂單。
+4. 呼叫 `PaymentService.charge()`：經 `PaymentGatewayFactory` 取得該付款方式的 Adapter 請款（模擬模式：測試卡號 `4000 0000 0000 0002` 失敗，其餘成功）並寫入 payments，回傳成功或失敗；PaymentService 不碰訂單。
 5. 成功：`transition(CONFIRMED, PAY)`、`AccessCodeService.issue()`、`NotificationService.enqueue()`；失敗：訂單維持待付款，回傳 200 與 `CARD_DECLINED`。
 6. 提交後寄送確認信。若 INSERT 仍因冪等鍵唯一約束失敗（極少見的競爭），回滾後依第 2 步回傳既有結果。
 
@@ -314,13 +335,13 @@ flowchart LR
 ### 6.3 取消（FR-32、FR-45）：`BookingService.cancel_by_member()`、`cancel_by_admin()`
 
 1. 鎖定訂單；已是 CANCELLED 時直接回傳原結果（冪等）。
-2. 以 `RefundPolicy` 計算退款：會員依 BR-12，管理員依 BR-13（100%），以實收金額為基準。兩個公開方法只差在比例與「原因是否必填」，共用私有 `_cancel()`。
+2. 以 `RefundPolicy` 策略計算退款：會員依 `MemberRefundPolicy`（BR-12；待付款訂單用 `NoRefundPolicy`），管理員依 `AdminRefundPolicy`（BR-13，100%），以實收金額為基準。兩個公開方法只差在比例與「原因是否必填」，共用私有 `_cancel()`。
 3. `PaymentService.refund()` 新增 REFUND（金額 > 0 時；method 沿用原付款；冪等鍵 `refund-cancel-{booking_id}`）、寫入取消者、原因與時間、`transition(CANCELLED)`、`AccessCodeService.revoke()`、建立通知。
 
 ### 6.4 改期（FR-33、FR-45）：`BookingService.reschedule_by_member()`、`reschedule_by_admin()`
 
 1. 鎖定訂單。若訂單已是請求的新時段，直接回傳成功（重送請求的冪等處理）。
-2. `reschedule_by_member()` 檢查 BR-14（狀態、原訂單開始前 24 小時、次數）；`reschedule_by_admin()` 檢查 BR-19（時數相同）；兩者共用私有 `_reschedule()`，都檢查新時段的 BR-01、02、04。價差由 `PricingPolicy` 計算。
+2. `reschedule_by_member()` 依 `booking_rules.reschedule_denial()` 檢查 BR-14（狀態、原訂單開始前 24 小時、次數）；`reschedule_by_admin()` 檢查 BR-19（時數相同）；兩者共用私有 `_reschedule()`，都檢查新時段的 BR-01、02、04。價差由 `PricingPolicy` 計算。
 3. 更新 start_at、end_at、total_amount（以原時租快照重算）；會員改期另將 reschedule_count 加 1。若新時段與他人重疊，排除約束拋錯，整個交易回滾，原訂單不變。
 4. 價差 > 0：在同一交易中以請求的 method 執行模擬付款（冪等鍵取自標頭），卡片遭拒則整個交易回滾，回傳 422 `RESCHEDULE_NOT_ALLOWED`（details 註明 `CARD_DECLINED`），原訂單不變；價差 < 0：新增 REFUND（冪等鍵 `refund-resched-{booking_id}`）。
 5. `AccessCodeService.sync_validity()` 更新房間密碼有效時間；`Booking.record(RESCHEDULE)` 寫紀錄，reason 記錄「原時段 → 新時段」；建立通知。
