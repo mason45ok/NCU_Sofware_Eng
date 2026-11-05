@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..adapters.payment import build_default_factory
 from ..mail.sender import Mailer
+from ..repositories import BookingRepository
 from ..utils.clock import Clock
 from .access_code import AccessCodeService
 from .admin_booking import AdminBookingService
@@ -48,9 +50,11 @@ def build_services(clock: Clock, mailer: Mailer) -> Services:
     google = GoogleAuthService(auth, passwords)
     availability = AvailabilityService(clock)
     catalog = CatalogService(clock, availability)
-    payments = PaymentService()
+    payments = PaymentService(build_default_factory())
     access_codes = AccessCodeService(clock)
-    bookings = BookingService(clock, availability, payments, access_codes, notifications)
+    bookings = BookingService(
+        clock, availability, payments, access_codes, notifications, repo=BookingRepository()
+    )
     return Services(
         clock=clock,
         notifications=notifications,

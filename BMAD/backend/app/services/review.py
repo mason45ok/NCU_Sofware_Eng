@@ -8,11 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from ..errors import BusinessRuleError, NotFoundError
 from ..extensions import db
 from ..models import Booking, BookingStatus, Review, Space
+from ..policies import booking_rules
 from ..schemas.account import UserDTO
 from ..schemas.base import Page
 from ..schemas.catalog import ReviewDTO
 from ..utils.clock import Clock
-from .booking import REVIEW_WINDOW, BookingService
+from .booking import BookingService
 
 
 def _mask(name: str) -> str:
@@ -30,7 +31,7 @@ class ReviewService:
         booking = self.bookings.get_for_owner(user, booking_id)  # 非本人 → 404
         if booking.status != BookingStatus.COMPLETED:
             raise BusinessRuleError("REVIEW_NOT_ALLOWED", "訂單完成後才能評論")
-        if self.clock.now() > booking.end_at + REVIEW_WINDOW:
+        if not booking_rules.review_window_open(booking.end_at, self.clock.now()):
             raise BusinessRuleError("REVIEW_NOT_ALLOWED", "已超過評論期限（結束後 30 天內）")
         if booking.reviewed:
             raise BusinessRuleError("REVIEW_NOT_ALLOWED", "此訂單已評論過")

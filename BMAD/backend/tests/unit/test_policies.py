@@ -1,4 +1,4 @@
-"""PricingPolicy、RefundPolicy 的邊界值（純函式，不需資料庫）。BR-07、12、13、14。"""
+"""PricingPolicy、RefundPolicy（Strategy）的邊界值（純邏輯，不需資料庫）。BR-07、12、13、14。"""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -35,11 +35,35 @@ def test_br14_reschedule_diff_uses_snapshot(old_hours, new_hours, diff):
     ],
 )
 def test_br12_member_ratio_boundaries(lead, ratio):
-    assert refund.member_ratio(NOW + lead, NOW) == Decimal(ratio)
+    assert refund.MemberRefundPolicy().ratio(NOW + lead, NOW) == Decimal(ratio)
 
 
-def test_br13_admin_ratio_is_full():
-    assert refund.admin_ratio() == Decimal(1)
+def test_br13_admin_policy_is_full_refund_at_any_time():
+    policy = refund.AdminRefundPolicy()
+    assert policy.ratio(NOW + timedelta(hours=1), NOW) == Decimal(1)
+    assert policy.ratio(NOW - timedelta(hours=1), NOW) == Decimal(1)
+
+
+def test_br12_pending_cancel_uses_no_refund_policy():
+    assert refund.NoRefundPolicy().ratio(NOW + timedelta(hours=48), NOW) == Decimal(0)
+
+
+def test_new_refund_rule_is_just_a_new_class():
+    """新增退款規則只需新增 RefundPolicy 子類別，不必修改既有類別。"""
+
+    class FullRefundOverOneWeek(refund.RefundPolicy):
+        def ratio(self, start_at, now):
+            return Decimal(1) if start_at - now >= timedelta(days=7) else Decimal("0.2")
+
+    policy = FullRefundOverOneWeek()
+    assert policy.ratio(NOW + timedelta(days=8), NOW) == Decimal(1)
+    assert policy.ratio(NOW + timedelta(days=2), NOW) == Decimal("0.2")
+
+
+def test_cancel_policy_text_matches_member_tiers():
+    text = " ".join(refund.CANCEL_POLICY_TEXT)
+    for threshold, _ in refund.MemberRefundPolicy.TIERS:
+        assert str(int(threshold.total_seconds() // 3600)) in text
 
 
 @pytest.mark.parametrize(

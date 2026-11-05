@@ -6,6 +6,7 @@ import os
 
 from flask import Flask
 
+from .adapters.identity import IdentityProvider, build_identity_provider
 from .config import Config
 from .errors import register_error_handlers
 from .extensions import csrf, db, limiter, login_manager, migrate
@@ -17,8 +18,9 @@ def create_app(
     config: type | dict | None = None,
     clock: Clock | None = None,
     mailer: Mailer | None = None,
+    identity_provider: IdentityProvider | None = None,
 ) -> Flask:
-    """clock、mailer 可注入替換（測試時使用固定時間與假寄信）。"""
+    """clock、mailer、identity_provider 可注入替換（測試時使用固定時間、假寄信與假身分提供者）。"""
     app = Flask(__name__)
     app.config.from_object(Config)
     if isinstance(config, dict):
@@ -42,6 +44,7 @@ def create_app(
     from .services import build_services
 
     app.extensions["services"] = build_services(clock or Clock(), mailer or Mailer())
+    app.extensions["identity_provider"] = identity_provider or build_identity_provider(app)
 
     @login_manager.user_loader
     def load_user(user_id: str):

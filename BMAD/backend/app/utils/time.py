@@ -7,6 +7,11 @@ TAIPEI = ZoneInfo("Asia/Taipei")
 _WEEKDAYS = "一二三四五六日"
 
 
+def whole_hours(start_at: datetime, end_at: datetime) -> int:
+    """兩個時間點相差的整點時數（時段一律為整點）。"""
+    return int((end_at - start_at).total_seconds() // 3600)
+
+
 def to_taipei(value: datetime) -> datetime:
     """轉成台北時間；沒有時區的時間視為 UTC。"""
     if value.tzinfo is None:

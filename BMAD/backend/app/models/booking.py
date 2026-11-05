@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..errors import ConflictError
 from ..extensions import db
+from ..utils.time import whole_hours
 from .columns import BigId
 from .enums import (
     AccessCodeState,
@@ -121,7 +122,7 @@ class Booking(db.Model):
 
     # ---- 衍生屬性 ----
     def hours(self) -> int:
-        return int((self.end_at - self.start_at).total_seconds() // 3600)
+        return whole_hours(self.start_at, self.end_at)
 
     def is_active(self) -> bool:
         """與資料庫排除約束的條件相同：待付款或已確認。"""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from flask import Blueprint, current_app, jsonify, redirect, request, session
+from flask import Blueprint, current_app, jsonify, redirect, session
 from flask_login import current_user, login_user, logout_user
 from flask_wtf.csrf import generate_csrf
 
@@ -20,7 +20,7 @@ from ..schemas.account import (
     TokenReq,
 )
 from ..security.permissions import SessionUser, login_required
-from ._common import ok, parse_body, svc
+from ._common import identity_provider, ok, parse_body, svc
 
 bp = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
@@ -109,53 +109,15 @@ def set_password():
 
 
 # ---------- Google 登入（FR-04） ----------
-def _oauth():
-    """正式模式才建立 Authlib 用戶端（開發期以 mock 代替）。"""
-    from authlib.integrations.flask_client import OAuth
-
-    oauth = current_app.extensions.get("authlib_oauth")
-    if oauth is None:
-        oauth = OAuth(current_app)
-        oauth.register(
-            "google",
-            client_id=current_app.config["GOOGLE_CLIENT_ID"],
-            client_secret=current_app.config["GOOGLE_CLIENT_SECRET"],
-            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-            client_kwargs={"scope": "openid email profile"},
-        )
-        current_app.extensions["authlib_oauth"] = oauth
-    return oauth.google
-
-
 @bp.get("/google/start")
 def google_start():
-    if current_app.config["GOOGLE_MOCK"]:
-        return redirect("/api/v1/dev/google-mock")
     callback = current_app.config["APP_BASE_URL"] + "/api/v1/auth/google/callback"
-    return _oauth().authorize_redirect(callback)
+    return identity_provider().begin(callback)
 
 
 @bp.get("/google/callback")
 def google_callback():
-    if current_app.config["GOOGLE_MOCK"]:  # 開發模式：身分由 mock 頁面帶入
-        try:
-            identity = GoogleIdentity(
-                sub=request.args["sub"],
-                email=request.args["email"],
-                name=request.args.get("name", ""),
-                email_verified=request.args.get("email_verified", "true") == "true",
-            )
-        except KeyError:
-            raise ValidationError("VALIDATION_ERROR") from None
-    else:
-        token = _oauth().authorize_access_token()
-        info = token["userinfo"]
-        identity = GoogleIdentity(
-            sub=info["sub"],
-            email=info["email"],
-            name=info.get("name", ""),
-            email_verified=bool(info.get("email_verified")),
-        )
+    identity = identity_provider().complete()
     try:
         result = svc().google.handle_callback(identity)
     except AppError as err:

@@ -7,6 +7,7 @@ from datetime import datetime
 
 from pydantic import Field
 
+from ..models import PaymentMethod
 from .base import DTO, InDatetime, Request, TPDatetime
 
 
@@ -29,7 +30,7 @@ class NewSlot:
 
 
 class PayReq(Request):
-    method: str = Field(pattern="^(CREDIT_CARD|LINE_PAY)$")
+    method: PaymentMethod
     card_no: str | None = Field(default=None, max_length=32)
 
 
@@ -43,7 +44,7 @@ class RescheduleQuoteReq(Request):
 
 
 class RescheduleReq(RescheduleQuoteReq):
-    method: str | None = Field(default=None, pattern="^(CREDIT_CARD|LINE_PAY)$")
+    method: PaymentMethod | None = None
     card_no: str | None = Field(default=None, max_length=32)
 
 

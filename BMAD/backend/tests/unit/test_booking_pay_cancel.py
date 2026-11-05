@@ -328,3 +328,23 @@ def test_br26_cancel_sends_notification_with_refund(services, make_user, mailer,
     assert (
         len(mailer.sent) == 1 and "已取消" in mailer.sent[0][1] and "NT$ 600" in mailer.sent[0][2]
     )
+
+
+# ---------- 退款策略可注入（Strategy） ----------
+def test_br12_cancel_uses_injected_member_refund_policy(services, make_user, space_id, monkeypatch):
+    """BookingService 取消流程只依賴 RefundPolicy：換策略不必修改流程。"""
+    from decimal import Decimal
+
+    from app.policies.refund import RefundPolicy
+
+    class HalfAlways(RefundPolicy):
+        def ratio(self, start_at, now):
+            return Decimal("0.5")
+
+    user = make_user()
+    dto = booked(services, user, space_id, day=5)  # 本來會是全額退款
+    monkeypatch.setattr(services.bookings, "member_refund", HalfAlways())
+    quote = services.bookings.cancel_quote(user, dto.booking_id)
+    assert quote.ratio == 0.5 and quote.refund_amount == dto.total_amount // 2
+    services.bookings.cancel_by_member(user, dto.booking_id)
+    assert fresh(dto.booking_id).net_paid() == dto.total_amount - dto.total_amount // 2

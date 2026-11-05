@@ -9,6 +9,7 @@ from flask_login import current_user
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
+from ..adapters.identity import IdentityProvider
 from ..errors import ValidationError
 from ..schemas.account import UserDTO
 from ..services import Services
@@ -18,6 +19,10 @@ M = TypeVar("M", bound=BaseModel)
 
 def svc() -> Services:
     return current_app.extensions["services"]
+
+
+def identity_provider() -> IdentityProvider:
+    return current_app.extensions["identity_provider"]
 
 
 def me() -> UserDTO:
