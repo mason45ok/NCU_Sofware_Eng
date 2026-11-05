@@ -119,7 +119,9 @@ pytest
 backend/app/
   models/        資料表對應（16 張表）；Booking.transition() 是唯一能改訂單狀態的地方
   services/      商業邏輯與交易；BookingService 是訂單流程唯一入口
-  policies/      金額與退款比例的純函式
+  policies/      業務規則：金額（純函式）、退款比例（RefundPolicy 策略）、訂單門檻與 can_* 判斷（booking_rules）
+  adapters/      外部服務 Adapter：金流（payment/，註冊表 Factory）、Google 登入（identity/）
+  repositories/  BookingRepository：訂單的查詢、鎖定與分頁
   blueprints/    API 路由，只解析請求、呼叫 Service、轉換回應
   schemas/       Pydantic 請求與回應（DTO）
   jobs/          排程工作
