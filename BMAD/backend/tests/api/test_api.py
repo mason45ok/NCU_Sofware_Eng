@@ -98,26 +98,35 @@ def test_csrf_token_required_when_enabled(app, client, make_user):
         app.config["WTF_CSRF_ENABLED"] = False
 
 
-def test_nfr02_login_is_rate_limited(client, make_user):
-    make_user()
-    limiter.enabled = True
+def test_nfr02_login_is_rate_limited(app, clock, mailer):
+    """測試環境預設關閉限流（RATELIMIT_ENABLED=False，初始化時不建立儲存），
+    所以另外建立一個限流有開的應用來驗證；每次用不同的 email，避免先觸發帳號鎖定（BR-22）。"""
+    from app import create_app
+    from app.config import TestingConfig
+
+    class RateLimitedConfig(TestingConfig):
+        RATELIMIT_ENABLED = True
+        RATELIMIT_STORAGE_URI = "memory://"
+
+    limited = create_app(RateLimitedConfig, clock=clock, mailer=mailer)
     try:
+        client = limited.test_client()
         codes = [
             client.post(
-                f"{API}/auth/login", json={"email": "member@test.local", "password": "Wrong123"}
+                f"{API}/auth/login", json={"email": f"nobody{i}@test.local", "password": "Wrong123"}
             ).status_code
-            for _ in range(11)
+            for i in range(11)
         ]
         assert codes[:10] == [401] * 10 and codes[10] == 429
-        assert (
-            client.post(
-                f"{API}/auth/login", json={"email": "a@test.local", "password": "x"}
-            ).get_json()["error"]["code"]
-            == "RATE_LIMITED"
-        )
+        body = client.post(
+            f"{API}/auth/login", json={"email": "a@test.local", "password": "x"}
+        ).get_json()
+        assert body["error"]["code"] == "RATE_LIMITED"
     finally:
-        limiter.enabled = False
         limiter.reset()
+        limiter.init_app(
+            app
+        )  # 限流器是全域單例：還原給原本的測試應用（限流關閉），避免影響後面的測試
 
 
 # ---------- 帳號流程 ----------
