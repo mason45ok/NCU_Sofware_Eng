@@ -53,9 +53,15 @@ export function SlotGrid({
             aria-pressed={selected}
             aria-label={`${String(s.start).padStart(2, '0')}:00，${LABEL[s.status]}`}
             onClick={() => onChange(nextSelection(slots, selection, s.start))}
-            styles={{ label: { flexDirection: 'column', lineHeight: 1.2 } }}
+            h="auto"
+            py={6}
+            px="xs"
+            styles={{
+              label: { flexDirection: 'column', lineHeight: 1.3, overflow: 'visible' },
+            }}
           >
-            <span>{String(s.start).padStart(2, '0')}:00</span>
+            {/* 以小時為單位租借，畫面只顯示「時」；完整時間留在 aria-label */}
+            <span>{String(s.start).padStart(2, '0')} 時</span>
             <Text span size="xs">
               {selected ? '已選' : LABEL[s.status]}
             </Text>
