@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   Divider,
-  Grid,
   Group,
   Image,
   List,
@@ -60,6 +59,7 @@ function BookingPanel({ spaceId, bookable }: { spaceId: number; bookable: boolea
   const { data: me } = useMe();
   const navigate = useNavigate();
   const [picked, setPicked] = useState<PickedRange | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const quote = useQuote(
     picked
       ? { space_id: spaceId, start_at: picked.start_at, end_at: picked.end_at, attendees: 1 }
@@ -74,10 +74,28 @@ function BookingPanel({ spaceId, bookable }: { spaceId: number; bookable: boolea
   };
 
   return (
-    <Card withBorder padding="md">
+    <Card
+      withBorder
+      padding="md"
+      shadow="lg"
+      style={{
+        position: 'fixed',
+        right: 16,
+        bottom: 16,
+        zIndex: 200,
+        width: 'min(380px, calc(100vw - 32px))',
+        maxHeight: 'calc(100vh - 96px)',
+        overflowY: 'auto',
+      }}
+    >
       <Stack>
-        <Title order={4}>選擇日期與時段</Title>
-        {!bookable ? (
+        <Group justify="space-between" wrap="nowrap">
+          <Title order={4}>選擇日期與時段</Title>
+          <Button variant="subtle" size="compact-sm" onClick={() => setCollapsed((v) => !v)}>
+            {collapsed ? '展開' : '收合'}
+          </Button>
+        </Group>
+        {collapsed ? null : !bookable ? (
           <Alert color="yellow">此空間目前暫停開放預約</Alert>
         ) : (
           <>
@@ -106,6 +124,14 @@ function BookingPanel({ spaceId, bookable }: { spaceId: number; bookable: boolea
             <Button disabled={!picked || (!!me && !quote.data)} onClick={go}>
               {me ? '預約' : '登入後預約'}
             </Button>
+            {!me && (
+              <Text size="sm">
+                <Anchor component={Link} to="/login">
+                  登入
+                </Anchor>
+                後可收藏與預約
+              </Text>
+            )}
           </>
         )}
       </Stack>
@@ -124,8 +150,8 @@ export function SpaceDetailPage() {
   return (
     <QueryState loading={space.isLoading} error={space.error}>
       {d && (
-        <Grid gutter="lg">
-          <Grid.Col span={{ base: 12, md: 7 }}>
+        <>
+          <Stack pb={96}>
             <Stack>
               <Group justify="space-between" wrap="nowrap">
                 <Title order={2}>
@@ -138,23 +164,37 @@ export function SpaceDetailPage() {
                   已下架／暫停開放
                 </Badge>
               )}
-              <Group gap="xs" style={{ overflowX: 'auto' }} wrap="nowrap">
+              {/* 主視覺：空間照片佔畫面最大比例，其餘說明往下捲動才看得到 */}
+              <Group
+                gap="xs"
+                wrap="nowrap"
+                style={{ overflowX: 'auto', scrollSnapType: 'x mandatory' }}
+              >
                 {d.photos.length === 0 && (
                   <Image
-                    h={240}
+                    w="min(100%, 680px)"
+                    style={{ aspectRatio: '16 / 9', height: 'auto' }}
+                    fit="cover"
+                    radius="md"
                     src={null}
                     alt="尚無照片"
-                    fallbackSrc="https://placehold.co/600x320?text=%E5%B0%9A%E7%84%A1%E7%85%A7%E7%89%87"
+                    fallbackSrc="https://placehold.co/1200x700?text=%E5%B0%9A%E7%84%A1%E7%85%A7%E7%89%87"
                   />
                 )}
                 {d.photos.map((p) => (
                   <Image
                     key={p.photo_id}
                     src={p.image_url}
-                    h={240}
-                    w="auto"
+                    w="min(100%, 680px)"
+                    fit="cover"
                     radius="md"
                     alt={p.caption ?? d.name}
+                    style={{
+                      flex: '0 0 min(100%, 680px)',
+                      aspectRatio: '16 / 9',
+                      height: 'auto',
+                      scrollSnapAlign: 'start',
+                    }}
                   />
                 ))}
               </Group>
@@ -210,19 +250,9 @@ export function SpaceDetailPage() {
               <Divider />
               <Reviews spaceId={id} />
             </Stack>
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, md: 5 }}>
-            <BookingPanel spaceId={id} bookable={d.bookable} />
-            {!me && (
-              <Text size="sm" mt="sm">
-                <Anchor component={Link} to="/login">
-                  登入
-                </Anchor>
-                後可收藏與預約
-              </Text>
-            )}
-          </Grid.Col>
-        </Grid>
+          </Stack>
+          <BookingPanel spaceId={id} bookable={d.bookable} />
+        </>
       )}
     </QueryState>
   );

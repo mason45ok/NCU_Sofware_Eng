@@ -19,7 +19,7 @@ import { addDays, todayLocal } from '../lib/format';
 export function HomePage() {
   const navigate = useNavigate();
   const { data: options } = useFilterOptions();
-  const featured = useSpaces({ page_size: 6 });
+  const featured = useSpaces({ page_size: 12 });
   const [city, setCity] = useState('');
   const [people, setPeople] = useState<number | string>('');
   const [date, setDate] = useState('');

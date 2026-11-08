@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+from pathlib import Path
 from datetime import UTC, datetime, time, timedelta
 
 from flask import current_app
@@ -173,19 +175,67 @@ SPACES = [
         "四到六人的小型會議室。",
         ["白板", "Wi-Fi", "冷氣"],
     ),
+    (0, "203 小會議室", "MEETING", 4, 5.0, 200, "適合兩到四人的快速討論。", ["白板", "Wi-Fi", "冷氣"]),
+    (0, "302 多功能室", "MULTI", 25, 24.0, 900, "可彈性隔間的活動空間。", ["投影機", "音響", "麥克風", "Wi-Fi", "冷氣"]),
+    (0, "303 攝影棚", "STUDIO", 5, 8.0, 600, "簡易攝影空間，附攝影燈。", ["攝影燈", "Wi-Fi", "冷氣"]),
+    (1, "A3 討論室", "CLASSROOM", 14, 14.0, 550, "投影與白板齊全的教學空間。", ["投影機", "白板", "Wi-Fi", "冷氣", "長桌"]),
+    (1, "A4 派對廳", "PARTY", 24, 22.0, 1000, "適合生日與公司聚餐。", ["音響", "麥克風", "簡易廚房", "飲水機", "冷氣"]),
+    (1, "B2 董事會議室", "MEETING", 12, 13.0, 800, "大型會議桌與視訊設備。", ["投影機", "白板", "Wi-Fi", "冷氣", "長桌"]),
+    (2, "104 工作坊教室", "CLASSROOM", 20, 20.0, 450, "寬敞教室，適合工作坊。", ["投影機", "白板", "Wi-Fi", "冷氣", "長桌"]),
+    (2, "105 攝影棚", "STUDIO", 8, 12.0, 650, "挑高攝影空間。", ["攝影燈", "Wi-Fi", "冷氣"]),
+    (2, "201 多功能廳", "MULTI", 40, 36.0, 1300, "大型講座與活動場地。", ["投影機", "音響", "麥克風", "Wi-Fi", "冷氣"]),
+    (2, "202 小聚會室", "PARTY", 10, 10.0, 450, "小型聚會與交流空間。", ["音響", "飲水機", "冷氣"]),
+    (1, "A5 閱讀討論室", "MEETING", 6, 7.0, 400, "安靜適合讀書會。", ["白板", "Wi-Fi", "冷氣"]),
 ]
-COLORS = ["#B4632E", "#5F7A45", "#8C6A4F", "#C9A27A", "#6E8B6B", "#A15C38"]
+# 以範本批次補足到 50 筆：(類型, 名稱後綴, 容量, 坪數, 時租, 介紹, 設備)
+_EXTRA_TEMPLATES = [
+    ("MEETING", "會議室", 8, 8.0, 320, "設備齊全的會議空間，適合團隊討論。", ["投影機", "白板", "Wi-Fi", "冷氣"]),
+    ("CLASSROOM", "教室", 16, 16.0, 480, "教室式座位，適合課程與工作坊。", ["投影機", "白板", "Wi-Fi", "冷氣", "長桌"]),
+    ("PARTY", "聚會廳", 18, 18.0, 700, "附音響與簡易廚房的聚會空間。", ["音響", "麥克風", "簡易廚房", "飲水機", "冷氣"]),
+    ("STUDIO", "攝影棚", 6, 10.0, 650, "附攝影燈的小型拍攝空間。", ["攝影燈", "Wi-Fi", "冷氣"]),
+    ("MULTI", "多功能室", 28, 28.0, 1100, "彈性使用的活動與講座空間。", ["投影機", "音響", "麥克風", "Wi-Fi", "冷氣"]),
+]
+SPACES += [
+    (
+        i % 3,
+        f"{401 + i} {_EXTRA_TEMPLATES[i % 5][1]}",
+        _EXTRA_TEMPLATES[i % 5][0],
+        _EXTRA_TEMPLATES[i % 5][2] + (i % 4) * 2,
+        _EXTRA_TEMPLATES[i % 5][3] + (i % 4) * 2,
+        _EXTRA_TEMPLATES[i % 5][4] + (i % 6) * 20,
+        _EXTRA_TEMPLATES[i % 5][5],
+        _EXTRA_TEMPLATES[i % 5][6],
+    )
+    for i in range(50 - len(SPACES))
+]
 
 
-def _svg(path: str, title: str, color: str) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">'
-            f'<rect width="800" height="500" fill="{color}"/>'
-            f'<text x="400" y="260" font-size="48" fill="#FAF6F0" text-anchor="middle" '
-            f'font-family="sans-serif">{title}</text></svg>'
+PHOTO_DIR = Path(__file__).resolve().parent / "seed_photos"
+
+
+def _photo_files(space_type: str, rank: int) -> list[str]:
+    """依空間類型挑 2 張照片。rank 為該空間在同類型中的序號：封面依序不重複，第二張錯開半個池。"""
+    files = sorted(p.name for p in PHOTO_DIR.glob(f"{space_type.lower()}-*.jpg"))
+    return [files[rank % len(files)], files[(rank + len(files) // 2) % len(files)]]
+
+
+def _type_rank(space: Space) -> int:
+    """同類型空間中，編號在此空間之前的數量（0 起算）。"""
+    return (
+        db.session.scalar(
+            select(func.count(Space.space_id)).where(
+                Space.space_type == space.space_type, Space.space_id < space.space_id
+            )
         )
+        or 0
+    )
+
+
+def _copy_photo(upload_dir: str, src_name: str, dest_name: str) -> str:
+    """把種子照片複製到上傳目錄，回傳對外網址。"""
+    os.makedirs(os.path.join(upload_dir, "seed"), exist_ok=True)
+    shutil.copyfile(PHOTO_DIR / src_name, os.path.join(upload_dir, "seed", dest_name))
+    return f"/uploads/seed/{dest_name}"
 
 
 def _user(
@@ -258,9 +308,76 @@ def _demo_booking(user, space, start, end, status_flow, *, paid=True):
     return booking
 
 
+def _create_spaces(branches, equipment, existing_names: set[str]) -> list[Space]:
+    """依 SPACES 建立空間（名稱已存在者略過），回傳新建的空間。"""
+    upload_dir = current_app.config["UPLOAD_DIR"]
+    spaces = []
+    for index, (b, name, kind, cap, area, price, desc, items) in enumerate(SPACES):
+        if (branches[b].branch_id, name) in existing_names:
+            continue
+        space = Space(
+            branch_id=branches[b].branch_id,
+            name=name,
+            space_type=kind,
+            capacity=cap,
+            area=area,
+            hourly_price=price,
+            description=desc,
+            rules="請愛惜設備、保持整潔；禁止吸菸；離場前請將桌椅歸位並帶走垃圾。",
+            entry_guide="抵達後請至一樓電梯上樓，於房門輸入訂單的 6 位數房間密碼即可進入；離場時關閉電源與冷氣。",
+        )
+        db.session.add(space)
+        db.session.flush()
+        for order, src in enumerate(_photo_files(kind, _type_rank(space))):
+            url = _copy_photo(upload_dir, src, f"space-{space.space_id}-{order}.jpg")
+            db.session.add(
+                SpacePhoto(space_id=space.space_id, image_url=url, caption=name, sort_order=order)
+            )
+        for item in items:
+            db.session.add(
+                SpaceEquipment(space_id=space.space_id, equipment_id=equipment[item].equipment_id)
+            )
+        spaces.append(space)
+    db.session.flush()
+    return spaces
+
+
+def _replace_placeholder_photos() -> int:
+    """把舊的 SVG 佔位圖換成依類型挑選的實景照片。"""
+    upload_dir = current_app.config["UPLOAD_DIR"]
+    count = 0
+    for space in db.session.scalars(select(Space)):
+        placeholders = [p for p in space.photos if p.image_url.startswith("/uploads/seed/")]
+        if not placeholders:
+            continue
+        files = _photo_files(space.space_type, _type_rank(space))
+        for photo in placeholders:
+            src = files[photo.sort_order % len(files)]
+            photo.image_url = _copy_photo(
+                upload_dir, src, f"space-{space.space_id}-{photo.sort_order}.jpg"
+            )
+            count += 1
+    return count
+
+
+def _top_up_spaces() -> str:
+    """已有資料時，只補上 SPACES 中尚未存在的空間。"""
+    branches = [
+        db.session.scalar(select(Branch).where(Branch.name == b["name"])) for b in BRANCHES
+    ]
+    if any(b is None for b in branches):
+        return "已有資料，略過種子資料"
+    equipment = {e.name: e for e in db.session.scalars(select(Equipment))}
+    existing = {(s.branch_id, s.name) for s in db.session.scalars(select(Space))}
+    created = _create_spaces(branches, equipment, existing)
+    replaced = _replace_placeholder_photos()
+    db.session.commit()
+    return f"已有資料，補上 {len(created)} 筆空間，替換 {replaced} 張佔位圖為實景照片"
+
+
 def run() -> str:
     if db.session.scalar(select(func.count(User.user_id))):
-        return "已有資料，略過種子資料"
+        return _top_up_spaces()
 
     _user("admin@judian.local", "管理員", role=Role.ADMIN)
     user1 = _user("user1@judian.local", "王小明")
@@ -296,43 +413,7 @@ def run() -> str:
     db.session.add_all(branches)
     db.session.flush()
 
-    upload_dir = current_app.config["UPLOAD_DIR"]
-    spaces = []
-    for index, (b, name, kind, cap, area, price, desc, items) in enumerate(SPACES):
-        space = Space(
-            branch_id=branches[b].branch_id,
-            name=name,
-            space_type=kind,
-            capacity=cap,
-            area=area,
-            hourly_price=price,
-            description=desc,
-            rules="請愛惜設備、保持整潔；禁止吸菸；離場前請將桌椅歸位並帶走垃圾。",
-            entry_guide="抵達後請至一樓電梯上樓，於房門輸入訂單的 6 位數房間密碼即可進入；離場時關閉電源與冷氣。",
-        )
-        db.session.add(space)
-        db.session.flush()
-        for order in range(2):
-            filename = f"space-{space.space_id}-{order}.svg"
-            _svg(
-                os.path.join(upload_dir, "seed", filename),
-                name,
-                COLORS[(index + order) % len(COLORS)],
-            )
-            db.session.add(
-                SpacePhoto(
-                    space_id=space.space_id,
-                    image_url=f"/uploads/seed/{filename}",
-                    caption=name,
-                    sort_order=order,
-                )
-            )
-        for item in items:
-            db.session.add(
-                SpaceEquipment(space_id=space.space_id, equipment_id=equipment[item].equipment_id)
-            )
-        spaces.append(space)
-    db.session.flush()
+    spaces = _create_spaces(branches, equipment, existing_names=set())
 
     today = local_date(datetime.now(UTC))
     # 已完成並已評論的訂單（示範評論與歷史訂單）
