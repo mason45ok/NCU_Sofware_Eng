@@ -138,7 +138,8 @@ flowchart LR
 │   │   ├── errors.py            # 例外類別、錯誤碼與 HTTP 狀態碼對照、統一錯誤回應
 │   │   └── utils/               # time.py：UTC 與 Asia/Taipei 轉換；clock.py：可替換的時鐘
 │   ├── migrations/
-│   ├── seed.py
+│   ├── seed.py                  # 種子資料：測試帳號、3 間場館、50 筆空間、示範訂單與評論
+│   ├── seed_photos/             # 種子用實景照片（Pexels 授權，依空間類型命名；來源見 CREDITS.md）
 │   └── tests/
 │       ├── unit/                # service 單元測試
 │       ├── api/                 # 透過 Flask test client 的 API 測試
@@ -435,6 +436,12 @@ cd frontend && npm install && npm test          # 前端單元測試（本機需
 npm run dev                                     # 前端開發伺服器，Vite 將 /api 代理到 localhost:8080
 cd ../e2e && npx playwright test                # 端對端測試（系統需先啟動）
 ```
+
+種子資料內容：
+
+- 空間共 50 筆（場館 3 間），類型涵蓋 CLASSROOM、MEETING、STUDIO、PARTY、MULTI；前幾筆為手寫資料，其餘由範本補足到 50 筆。
+- 每個空間 2 張照片，由 `backend/seed_photos/` 依空間類型輪替挑選，同類型的封面不重複，複製到上傳目錄 `/uploads/seed/`；照片來源與授權見 `backend/seed_photos/CREDITS.md`。
+- `flask seed` 可重複執行：資料庫已有使用者時，只補上缺少的空間，並把舊的佔位圖換成實景照片，不會重建帳號與訂單。
 
 種子資料的測試帳號（密碼皆為 `Passw0rd!`）：
 
