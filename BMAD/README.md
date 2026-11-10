@@ -24,7 +24,7 @@
 cp .env.example .env                       # Windows PowerShell：Copy-Item .env.example .env
 docker compose up --build -d               # 第一次需要幾分鐘建置
 docker compose exec api flask db upgrade   # 建立資料表（含防重複預約的排除約束）
-docker compose exec api flask seed         # 建立測試帳號、場館與空間
+docker compose exec api flask seed         # 建立測試帳號、場館、50 筆空間與實景照片（可重複執行，只補缺少的資料）
 ```
 
 完成後開啟：
